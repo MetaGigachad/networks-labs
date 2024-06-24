@@ -1,37 +1,39 @@
-from scapy.all import sr1, IP, ICMP
 import argparse
-import logging
+import icmplib
 import sys
 
 
 def is_reachable(host):
-    try:
-        response = sr1(IP(dst=host)/ICMP(), timeout=2, verbose=0)
-        return response is not None
-    except Exception:
-        return False
+    result = icmplib.ping(host)
+    return result.is_alive
 
 
 def find_mtu(host, max_mtu):
     left, right = 0, max_mtu
-
-    while left <= right:
-        mid = (left + right) // 2
+    while left < right:
+        mid = (left + right + 1) // 2
+        print(f"Current mid: {mid}, left: {left}, right: {right}")
 
         try:
-            response = sr1(IP(dst=host, flags="DF")/ICMP() /
-                           ("X" * (mid - 28)), timeout=2, verbose=0)
-            if response is not None:
-                left = mid + 1
+            status = icmplib.ping(
+                host,
+                payload_size=mid - 28,
+                timeout=2,
+                count=1,
+                interval=0,
+            )
+            if status.is_alive:
+                left = mid
             else:
                 right = mid - 1
-        except Exception:
-            right = mid - 1
-
+        except icmplib.exceptions.DestinationUnreachable:
+            print(f"Error: The host {host} is not reachable.")
+            sys.exit(1)
+        except icmplib.exceptions.NameLookupError:
+            print(f"Error: The host {host} is not resolved.")
+            sys.exit(1)
     return right
 
-
-logging.getLogger("scapy.runtime").setLevel(logging.FATAL)
 
 parser = argparse.ArgumentParser(
     description='Find the MTU for host.')
